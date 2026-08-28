@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="es">
+<!--
+=======================================================
+  BEGLI FRATELLI'S — SISTEMA DE PEDIDOS — CLIENTE
+  Archivo: cliente_firebase.html  |  Version: 3.0
+  (v3: WhatsApp + token + webhook a n8n, sin Firebase)
+  Secciones:
+    HTML · CSS · Variables · Menu (esqueleto generico) ·
+    Conexion a n8n · Token · Modal detalle producto ·
+    Carrito · Confirmacion · Eventos
+=======================================================
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Begli Fratelli's — Pedir en Linea</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+
+<!-- =======================
+     HTML
+     Solo estructura visual.
+     Sin logica. Sin estilos inline.
+======================= -->
+
+<div class="fondo">
+  <div class="celular">
+
+    <!-- CABECERA: logo, nombre restaurante, mesa activa -->
+    <header class="cabecera">
+      <div class="cabecera-logo">&#127829;</div>
+      <div class="cabecera-nombre">Begli Fratelli's</div>
+      <div class="cabecera-mesa" id="etiquetaMesa">Naranjal, Guayas</div>
+    </header>
+
+    <!-- PANTALLA: Cargando (visible al inicio) -->
+    <section class="pantalla" id="pantallaCarga">
+      <div class="spinner"></div>
+      <p class="texto-carga">Cargando menu...</p>
+    </section>
+
+    <!-- PANTALLA: Menu + carrito -->
+    <section class="pantalla oculto" id="pantallaMenu">
+      <div class="categorias" id="contenedorCategorias">
+        <button class="btn-categoria activo" data-cat="todas">Todas</button>
+        <button class="btn-categoria" data-cat="pizza">Pizza</button>
+        <button class="btn-categoria" data-cat="platos">Platos</button>
+        <button class="btn-categoria" data-cat="hamburguesa">Hamburguesa</button>
+        <button class="btn-categoria" data-cat="papas">Papas</button>
+        <button class="btn-categoria" data-cat="helados">Helados</button>
+        <button class="btn-categoria" data-cat="bebidas">Bebidas</button>
+      </div>
+      <div class="lista-platos" id="listaPlatos"></div>
+      <button class="barra-carrito" id="btnAbrirCarrito" disabled>
+        <div class="carrito-info">
+          <span class="carrito-cantidad" id="carritoContador">0 platos</span>
+          <span class="carrito-total"    id="carritoTotal">$0.00</span>
+        </div>
+        <span class="carrito-ver">Ver pedido &#8594;</span>
+      </button>
+    </section>
+
+    <!-- MODAL: Carrito (revisar, editar cantidades, eliminar) -->
+    <div class="modal-fondo oculto" id="modalCarrito">
+      <div class="modal-carrito">
+        <div class="modal-cabecera">
+          <span class="modal-titulo">Tu pedido</span>
+          <button class="modal-cerrar" id="btnCerrarCarrito">&#10005;</button>
+        </div>
+        <div class="modal-lista" id="modalListaCarrito"></div>
+        <div class="modal-pie">
+          <div class="modal-total-fila">
+            <span>Total del pedido</span>
+            <span id="modalTotal">$0.00</span>
+          </div>
+          <button class="btn-pedir" id="btnPedir" disabled>Confirmar pedido &#8594;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: Detalle de producto (tamanios + ingredientes editables) -->
+    <div class="modal-fondo oculto" id="modalDetalle">
+      <div class="modal-carrito">
+        <div class="modal-cabecera">
+          <span class="modal-titulo" id="detalleNombre">Producto</span>
+          <button class="modal-cerrar" id="btnCerrarDetalle">&#10005;</button>
+        </div>
+        <div class="modal-lista">
+          <div class="detalle-seccion oculto" id="detalleTamanios"></div>
+          <div class="detalle-seccion-titulo">Ingredientes</div>
+          <div id="detalleIngredientes"></div>
+        </div>
+        <div class="modal-pie">
+          <button class="btn-pedir" id="btnAgregarDetalle">Agregar &middot; $0.00</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANTALLA: Confirmacion pedido enviado -->
+    <section class="pantalla oculto" id="pantallaConfirmacion">
+      <div class="confirmacion-contenido">
+        <div class="confirmacion-icono">&#9989;</div>
+        <h2 class="confirmacion-titulo">&#161;Pedido recibido!</h2>
+        <p class="confirmacion-desc">Recibimos los productos de tu pedido.<br>Continua en WhatsApp para indicar tus datos de entrega y metodo de pago.</p>
+        <div class="confirmacion-detalle" id="confirmacionDetalle"></div>
+        <button class="btn-nuevo-pedido" id="btnNuevoPedido">Hacer otro pedido</button>
+      </div>
+    </section>
+
+    <!-- PANTALLA: Sin token valido en la URL (bloquea el menu por completo) -->
+    <section class="pantalla oculto" id="pantallaSinToken">
+      <div class="sintoken-contenido">
+        <div class="sintoken-icono">&#128274;</div>
+        <h2 class="sintoken-titulo">Este link no funciona para hacer tu pedido</h2>
+        <p class="sintoken-desc">Escribenos por WhatsApp para recibir tu enlace de pedido.</p>
+        <a class="btn-ir-whatsapp" id="btnIrWhatsapp" href="#" target="_blank" rel="noopener">Escribir por WhatsApp</a>
+      </div>
+    </section>
+
+    <!-- BANNER: Errores (aparece solo si algo falla) -->
+    <div class="banner-error oculto" id="bannerError">
+      <span id="textoError"></span>
+    </div>
+
+  </div><!-- /celular -->
+</div><!-- /fondo -->
+
+
+<style>
+/* =======================
+   CSS
+   Variables -> Reset -> Fondo ->
+   Cabecera -> Pantallas -> Platos ->
+   Carrito -> Confirmacion -> Errores
+======================= */
+
+/* ---- 1. Variables globales ---- */
+:root {
+  --rojo:        #c41e3a;
+  --verde:       #2d8659;
+  --gris-fondo:  #f0f0f0;
+  --gris-carta:  #f5f5f5;
+  --borde:       #ddd;
+  --texto:       #333;
+  --texto-suave: #666;
+  --blanco:      #fff;
+  --verde-claro: #22c55e;
+  --fuente:      'Inter', sans-serif;
+  --fuente-h:    'Space Grotesk', sans-serif;
+}
+
+/* ---- 2. Reset ---- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; }
+body {
+  font-family: var(--fuente);
+  font-size: 13px;
+  color: var(--texto);
+  background: var(--gris-fondo);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+/* ---- 3. Contenedor principal ---- */
+.fondo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Simula pantalla de celular */
+.celular {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  height: 90vh;
+  max-height: 800px;
+  background: var(--blanco);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 4. Cabecera ---- */
+.cabecera {
+  background: linear-gradient(135deg, var(--rojo), var(--verde));
+  color: var(--blanco);
+  text-align: center;
+  padding: 24px 16px 14px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.cabecera-logo   { font-size: 30px; margin-bottom: 4px; }
+.cabecera-nombre { font-family: var(--fuente-h); font-size: 17px; font-weight: 700; }
+.cabecera-mesa   { font-size: 11px; opacity: .9; margin-top: 3px; }
+
+/* ---- 5. Sistema de pantallas ---- */
+.pantalla { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.oculto   { display: none !important; }
+
+/* Pantalla de carga */
+#pantallaCarga { align-items: center; justify-content: center; gap: 12px; }
+.spinner {
+  width: 24px; height: 24px;
+  border: 3px solid var(--borde);
+  border-top-color: var(--verde);
+  border-radius: 50%;
+  animation: girar .8s linear infinite;
+}
+@keyframes girar { to { transform: rotate(360deg); } }
+.texto-carga { color: var(--texto-suave); font-size: 12px; }
+
+/* ---- 6. Categorias ---- */
+.categorias {
+  display: flex;
+  gap: 6px;
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--borde);
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+.categorias::-webkit-scrollbar { display: none; }
+
+.btn-categoria {
+  padding: 5px 13px;
+  font-size: 11px;
+  font-family: var(--fuente);
+  border: 1px solid var(--borde);
+  border-radius: 20px;
+  background: var(--blanco);
+  color: var(--texto);
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 500;
+  transition: all .15s;
+}
+.btn-categoria.activo { background: var(--rojo); border-color: var(--rojo); color: var(--blanco); }
+
+/* ---- 7. Tarjetas de platos ---- */
+.lista-platos {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tarjeta-plato {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--gris-carta);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.plato-emoji       { font-size: 30px; flex-shrink: 0; }
+.plato-info        { flex: 1; min-width: 0; }
+.plato-nombre      { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.plato-descripcion { font-size: 10px; color: var(--texto-suave); margin-bottom: 4px; line-height: 1.3; }
+.plato-precio      { font-size: 12px; font-weight: 700; color: var(--rojo); }
+
+.btn-agregar {
+  width: 34px; height: 34px;
+  background: var(--verde);
+  color: var(--blanco);
+  border: none;
+  border-radius: 8px;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s, transform .1s;
+  line-height: 1;
+}
+.btn-agregar:active { background: #1d6a47; transform: scale(.9); }
+
+/* ---- 8. Barra del carrito (boton flotante que abre el modal) ---- */
+.barra-carrito {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border: none;
+  border-top: 1px solid var(--borde);
+  background: var(--gris-carta);
+  flex-shrink: 0;
+  width: 100%;
+  font-family: var(--fuente);
+  cursor: pointer;
+  transition: background .15s;
+}
+.barra-carrito:disabled { cursor: not-allowed; opacity: .6; }
+.barra-carrito:not(:disabled):active { background: #e8e8e8; }
+
+.carrito-info     { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.carrito-cantidad { font-size: 11px; color: var(--texto-suave); }
+.carrito-total    { font-size: 16px; font-weight: 700; color: var(--rojo); }
+.carrito-ver      { font-size: 12px; font-weight: 700; color: var(--verde); flex-shrink: 0; }
+
+.btn-pedir {
+  width: 100%;
+  padding: 12px 18px;
+  background: var(--verde);
+  color: var(--blanco);
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--fuente);
+  cursor: pointer;
+  transition: background .15s;
+  flex-shrink: 0;
+}
+.btn-pedir:active   { background: #1d6a47; }
+.btn-pedir:disabled { background: #ccc; cursor: not-allowed; }
+
+/* ---- 8b. Modal del carrito ---- */
+.modal-fondo {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 200;
+}
+.modal-carrito {
+  width: 100%;
+  max-height: 80%;
+  background: var(--blanco);
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--borde);
+  flex-shrink: 0;
+}
+.modal-titulo { font-family: var(--fuente-h); font-size: 15px; font-weight: 700; }
+.modal-cerrar {
+  width: 26px; height: 26px;
+  border: none;
+  background: var(--gris-carta);
+  border-radius: 50%;
+  font-size: 12px;
+  color: var(--texto-suave);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-lista {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item-carrito {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--borde);
+}
+.item-carrito:last-child { border-bottom: none; }
+.item-info      { flex: 1; min-width: 0; }
+.item-nombre    { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.item-detalle   { font-size: 10px; color: var(--texto-suave); }
+.item-subtotal  { font-size: 12px; font-weight: 700; color: var(--rojo); margin-top: 3px; }
+.item-eliminar {
+  width: 28px; height: 28px;
+  border: none;
+  background: var(--gris-carta);
+  border-radius: 50%;
+  color: #c33;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.item-eliminar:active { background: #fee; }
+
+.carrito-vacio {
+  text-align: center;
+  color: var(--texto-suave);
+  font-size: 12px;
+  padding: 24px 0;
+}
+
+.modal-pie {
+  padding: 14px 16px;
+  border-top: 1px solid var(--borde);
+  background: var(--gris-carta);
+  flex-shrink: 0;
+}
+.modal-total-fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+#modalTotal { font-size: 17px; font-weight: 700; color: var(--rojo); }
+
+/* ---- 8c. Modal de detalle de producto ---- */
+.detalle-seccion {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0 14px;
+}
+.chip-tamanio {
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--fuente);
+  border: 1px solid var(--borde);
+  border-radius: 20px;
+  background: var(--blanco);
+  color: var(--texto);
+  cursor: pointer;
+}
+.chip-tamanio.activo { background: var(--verde); border-color: var(--verde); color: var(--blanco); }
+
+.detalle-seccion-titulo {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-suave);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  padding: 6px 0;
+}
+
+.fila-ingrediente {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--borde);
+  font-size: 12px;
+}
+.fila-ingrediente:last-child { border-bottom: none; }
+.fila-ingrediente.quitado span { text-decoration: line-through; color: var(--texto-suave); }
+
+.btn-quitar-ingrediente {
+  width: 26px; height: 26px;
+  border: 1px solid var(--borde);
+  background: var(--blanco);
+  border-radius: 50%;
+  font-size: 11px;
+  color: #c33;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fila-ingrediente.quitado .btn-quitar-ingrediente { color: var(--verde); border-color: var(--verde); }
+
+.item-sin { font-size: 10px; color: #c33; margin-top: 2px; }
+
+/* ---- 9. Pantalla de confirmacion ---- */
+#pantallaConfirmacion {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+.confirmacion-contenido { text-align: center; width: 100%; }
+.confirmacion-icono     { font-size: 48px; margin-bottom: 12px; }
+.confirmacion-titulo    { font-family: var(--fuente-h); font-size: 18px; font-weight: 700; color: var(--verde); margin-bottom: 8px; }
+.confirmacion-desc      { font-size: 12px; color: var(--texto-suave); line-height: 1.6; margin-bottom: 16px; }
+
+.confirmacion-detalle {
+  background: var(--gris-carta);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 11px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+.fila-detalle {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--borde);
+}
+.fila-detalle:last-of-type { border-bottom: none; }
+.fila-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0 0;
+  font-weight: 700;
+  color: var(--texto);
+  margin-top: 4px;
+}
+
+.btn-nuevo-pedido {
+  padding: 10px 20px;
+  background: var(--rojo);
+  color: var(--blanco);
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--fuente);
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-nuevo-pedido:active { background: #a01730; }
+
+/* ---- 9b. Pantalla de bloqueo: sin token en la URL ---- */
+#pantallaSinToken {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+.sintoken-contenido { text-align: center; width: 100%; }
+.sintoken-icono     { font-size: 48px; margin-bottom: 12px; }
+.sintoken-titulo    { font-family: var(--fuente-h); font-size: 17px; font-weight: 700; color: var(--rojo); margin-bottom: 8px; line-height: 1.4; }
+.sintoken-desc      { font-size: 12px; color: var(--texto-suave); line-height: 1.6; margin-bottom: 20px; }
+
+.btn-ir-whatsapp {
+  display: inline-block;
+  padding: 10px 20px;
+  background: #25D366;
+  color: var(--blanco);
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--fuente);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-ir-whatsapp:active { background: #1da851; }
+
+/* ---- 10. Banner de error ---- */
+.banner-error {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fee;
+  border: 1px solid #fcc;
+  color: #c33;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 11px;
+  white-space: nowrap;
+  max-width: 90%;
+  z-index: 100;
+}
+
+/* ---- 11. Responsive ---- */
+@media (max-width: 400px) {
+  body { padding: 0; }
+  .celular { max-width: 100%; height: 100vh; max-height: none; border-radius: 0; }
+}
+</style>
+
+
+<script>
+/* =======================
+   VARIABLES
+   Todo lo que puede cambiar esta aqui.
+   Credenciales, menu, estado del sistema.
+======================= */
+
+// ============================================================
+// URL del webhook de n8n que recibe el pedido confirmado.
+//
+// !! ATENCION ANTES DE PUBLICAR EN VERCEL !!
+// El valor de abajo (localhost:5678) SOLO funciona en la compu
+// de pruebas de Aurelio. Una vez la web este en Vercel, el
+// celular del cliente NO puede alcanzar "localhost" (eso
+// apuntaria al propio celular del cliente, no al servidor).
+//
+// Antes de publicar, cambiar esta linea por la URL PUBLICA y
+// HTTPS del n8n del negocio, con este formato:
+//   const N8N_WEBHOOK_URL = "https://n8n.tudominio.com/webhook/pedido-confirmado";
+// (sin "/webhook-test/", esa es solo para pruebas manuales en el editor de n8n)
+// ============================================================
+const N8N_WEBHOOK_URL = "http://localhost:5678/webhook/pedido-confirmado";
+
+// Datos del restaurante
+const RESTAURANTE = {
+  nombre:   "Begli Fratelli's",
+  ciudad:   "Naranjal, Guayas",
+  whatsapp: "0993100997"
+};
+
+// ============================================================
+// Menu completo del restaurante.
+// ESQUELETO FIJO por producto — para agregar un plato nuevo,
+// copia un bloque completo y cambia sus valores. El motor
+// (renderizarMenu, modal de ingredientes, carrito) lee esta
+// misma forma sin importar que producto sea.
+//
+//   nombre       — string
+//   cat          — una de: pizza, platos, hamburguesa, papas, helados, bebidas
+//   emoji        — string (un solo emoji)
+//   precio       — number. Si el producto tiene "tamanios",
+//                  este precio es el de referencia (se muestra
+//                  tachado o como base; el precio real sale del
+//                  tamanio elegido)
+//   tamanios     — opcional. Array de { nombre, precio }.
+//                  Si no aplica al producto, se omite el campo.
+//   ingredientes — array de strings. Cada uno se puede quitar
+//                  con la "x" en el detalle del producto.
+// ============================================================
+const MENU = [
+
+  // ---- PIZZA (6) ----
+  { id:"pizza_hawaiana", nombre:"Pizza Hawaiana",   cat:"pizza", emoji:"\u{1F355}", precio:8.50,
+    tamanios:[{nombre:"Pequeña",precio:6.00},{nombre:"Mediana",precio:8.50},{nombre:"Familiar",precio:12.00}],
+    ingredientes:["Piña","Jamón","Queso mozzarella","Salsa pomodoro"] },
+
+  { id:"pizza_pepperoni", nombre:"Pizza Pepperoni",  cat:"pizza", emoji:"\u{1F355}", precio:8.50,
+    tamanios:[{nombre:"Pequeña",precio:6.00},{nombre:"Mediana",precio:8.50},{nombre:"Familiar",precio:12.00}],
+    ingredientes:["Pepperoni","Queso mozzarella","Salsa pomodoro","Orégano"] },
+
+  { id:"pizza_salami", nombre:"Pizza Salami",     cat:"pizza", emoji:"\u{1F355}", precio:9.00,
+    tamanios:[{nombre:"Pequeña",precio:6.50},{nombre:"Mediana",precio:9.00},{nombre:"Familiar",precio:12.50}],
+    ingredientes:["Salami","Queso mozzarella","Salsa pomodoro","Aceitunas"] },
+
+  { id:"pizza_vegetariana", nombre:"Pizza Vegetariana",cat:"pizza", emoji:"\u{1F355}", precio:8.00,
+    tamanios:[{nombre:"Pequeña",precio:5.50},{nombre:"Mediana",precio:8.00},{nombre:"Familiar",precio:11.50}],
+    ingredientes:["Pimiento","Cebolla morada","Champiñones","Queso mozzarella","Salsa pomodoro"] },
+
+  { id:"pizza_mixta", nombre:"Pizza Mixta",      cat:"pizza", emoji:"\u{1F355}", precio:9.50,
+    tamanios:[{nombre:"Pequeña",precio:7.00},{nombre:"Mediana",precio:9.50},{nombre:"Familiar",precio:13.00}],
+    ingredientes:["Jamón","Pepperoni","Champiñones","Queso mozzarella","Salsa pomodoro"] },
+
+  { id:"pizza_especial_begli", nombre:"Pizza Especial Begli", cat:"pizza", emoji:"\u{1F355}", precio:10.00,
+    tamanios:[{nombre:"Pequeña",precio:7.50},{nombre:"Mediana",precio:10.00},{nombre:"Familiar",precio:14.00}],
+    ingredientes:["Carne molida","Pepperoni","Jamón","Queso triple","Salsa pomodoro"] },
+
+  // ---- PLATOS (6) ----
+  { id:"seco_de_pollo", nombre:"Seco de Pollo",    cat:"platos", emoji:"\u{1F372}", precio:4.50,
+    ingredientes:["Pollo","Arroz","Menestra","Maduro","Ensalada"] },
+
+  { id:"arroz_con_menestra_y_carne", nombre:"Arroz con Menestra y Carne", cat:"platos", emoji:"\u{1F372}", precio:4.50,
+    ingredientes:["Carne","Arroz","Menestra","Maduro"] },
+
+  { id:"churrasco", nombre:"Churrasco",        cat:"platos", emoji:"\u{1F372}", precio:5.00,
+    ingredientes:["Carne","Arroz","Huevo frito","Papas","Ensalada"] },
+
+  { id:"guatita", nombre:"Guatita",          cat:"platos", emoji:"\u{1F372}", precio:4.50,
+    ingredientes:["Panza de res","Papas","Salsa de maní","Arroz"] },
+
+  { id:"pollo_apanado", nombre:"Pollo Apanado",    cat:"platos", emoji:"\u{1F372}", precio:4.50,
+    ingredientes:["Pollo apanado","Arroz","Ensalada","Maduro"] },
+
+  { id:"bandeja_marinera", nombre:"Bandeja Marinera", cat:"platos", emoji:"\u{1F372}", precio:6.00,
+    ingredientes:["Camarón","Pescado","Arroz","Patacón"] },
+
+  // ---- HAMBURGUESA (6) ----
+  { id:"hamburguesa_clasica", nombre:"Hamburguesa Clásica", cat:"hamburguesa", emoji:"\u{1F354}", precio:5.50,
+    ingredientes:["Carne","Cheddar","Lechuga","Tomate","Pan"] },
+
+  { id:"hamburguesa_mixta", nombre:"Hamburguesa Mixta",   cat:"hamburguesa", emoji:"\u{1F354}", precio:6.00,
+    ingredientes:["Carne","Pollo","Queso","Campanones","Pan"] },
+
+  { id:"hamburguesa_vip", nombre:"Hamburguesa VIP",     cat:"hamburguesa", emoji:"\u{1F354}", precio:7.50,
+    ingredientes:["Doble carne","Queso","Tocino","Huevo","Pan"] },
+
+  { id:"hamburguesa_especial", nombre:"Hamburguesa Especial",cat:"hamburguesa", emoji:"\u{1F354}", precio:6.50,
+    ingredientes:["Carne","Huevo","Pollo","Queso","Pan"] },
+
+  { id:"hamburguesa_bbq", nombre:"Hamburguesa BBQ",     cat:"hamburguesa", emoji:"\u{1F354}", precio:6.50,
+    ingredientes:["Carne","Salsa BBQ","Cebolla crocante","Queso cheddar","Pan"] },
+
+  { id:"hamburguesa_vegetariana", nombre:"Hamburguesa Vegetariana", cat:"hamburguesa", emoji:"\u{1F354}", precio:5.50,
+    ingredientes:["Medallón de vegetales","Lechuga","Tomate","Queso","Pan"] },
+
+  // ---- PAPAS (6) ----
+  { id:"papas_chicas", nombre:"Papas Chicas",     cat:"papas", emoji:"\u{1F35F}", precio:1.50,
+    ingredientes:["Papas fritas","Sal"] },
+
+  { id:"papas_medianas", nombre:"Papas Medianas",   cat:"papas", emoji:"\u{1F35F}", precio:2.00,
+    ingredientes:["Papas fritas","Sal"] },
+
+  { id:"papas_grandes", nombre:"Papas Grandes",    cat:"papas", emoji:"\u{1F35F}", precio:2.50,
+    ingredientes:["Papas fritas","Sal"] },
+
+  { id:"papas_con_queso", nombre:"Papas con Queso",  cat:"papas", emoji:"\u{1F35F}", precio:3.00,
+    ingredientes:["Papas fritas","Queso fundido"] },
+
+  { id:"papas_con_salsas", nombre:"Papas con Salsas", cat:"papas", emoji:"\u{1F35F}", precio:2.80,
+    ingredientes:["Papas fritas","Salsa de ajo","Mayonesa","Ketchup"] },
+
+  { id:"patacones", nombre:"Patacones",        cat:"papas", emoji:"\u{1F35F}", precio:2.50,
+    ingredientes:["Verde frito","Sal","Ajo"] },
+
+  // ---- HELADOS (6) ----
+  { id:"helado_de_chocolate", nombre:"Helado de Chocolate", cat:"helados", emoji:"\u{1F368}", precio:2.00,
+    ingredientes:["Helado de chocolate","Almendras","Galletita de chocolate"] },
+
+  { id:"helado_de_vainilla", nombre:"Helado de Vainilla",  cat:"helados", emoji:"\u{1F368}", precio:2.00,
+    ingredientes:["Helado de vainilla","Chispas de chocolate"] },
+
+  { id:"helado_de_fresa", nombre:"Helado de Fresa",     cat:"helados", emoji:"\u{1F368}", precio:2.00,
+    ingredientes:["Helado de fresa","Trozos de fresa"] },
+
+  { id:"helado_napolitano", nombre:"Helado Napolitano",   cat:"helados", emoji:"\u{1F368}", precio:2.20,
+    ingredientes:["Chocolate","Vainilla","Fresa"] },
+
+  { id:"banana_split", nombre:"Banana Split",        cat:"helados", emoji:"\u{1F368}", precio:3.00,
+    ingredientes:["Banana","Helado de vainilla","Helado de chocolate","Crema batida","Cereza"] },
+
+  { id:"helado_con_oreo", nombre:"Helado con Oreo",     cat:"helados", emoji:"\u{1F368}", precio:2.50,
+    ingredientes:["Helado de vainilla","Galleta Oreo triturada"] },
+
+  // ---- BEBIDAS (6) ----
+  { id:"gaseosa_lata", nombre:"Gaseosa Lata",     cat:"bebidas", emoji:"\u{1F964}", precio:1.50,
+    ingredientes:["Cola, Sprite o Fanta"] },
+
+  { id:"gaseosa_personal", nombre:"Gaseosa Personal", cat:"bebidas", emoji:"\u{1F964}", precio:1.80,
+    tamanios:[{nombre:"500ml",precio:1.80},{nombre:"1.5L",precio:3.00}],
+    ingredientes:["Cola, Sprite o Fanta"] },
+
+  { id:"jugo_natural", nombre:"Jugo Natural",     cat:"bebidas", emoji:"\u{1F9C3}", precio:2.00,
+    ingredientes:["Naranja, fresa o maracuyá"] },
+
+  { id:"agua_embotellada", nombre:"Agua Embotellada", cat:"bebidas", emoji:"\u{1F4A7}", precio:1.00,
+    ingredientes:["Agua 500ml"] },
+
+  { id:"limonada", nombre:"Limonada",         cat:"bebidas", emoji:"\u{1F9C3}", precio:2.00,
+    ingredientes:["Limón","Agua","Azúcar"] },
+
+  { id:"cafe", nombre:"Café",             cat:"bebidas", emoji:"\u2615", precio:1.50,
+    ingredientes:["Café","Azúcar"] },
+];
+
+// Estado interno — no modificar directamente desde afuera
+let _carrito     = [];   // Items activos: [{nombre, precioUnitario, cantidad, tamanio, ingredientesQuitados}]
+let _tokenPedido = null; // Token de la conversacion, viene de ?pedido= en la URL
+let _productoActivo   = null; // Producto que esta abierto en el modal de detalle
+let _tamanioElegido   = null; // {nombre, precio} elegido en el modal de detalle
+let _ingredientesFuera = [];  // Nombres de ingredientes quitados en el modal de detalle
+let _pedidoYaEnviado   = false; // true una vez que este token ya mando un pedido a n8n con exito
+
+
+/* =======================
+   CONEXION A N8N
+   Envio del pedido confirmado al webhook de n8n.
+   n8n se encarga de guardarlo en Sheets y seguir el flujo
+   (metodo de pago, aviso a cajera, etc). Este archivo no
+   guarda nada por su cuenta ni decide cuando avisar a caja.
+======================= */
+
+/**
+ * Envia el pedido confirmado al webhook de n8n.
+ * @param {Object} pedido — objeto completo del pedido
+ */
+async function enviarPedidoAN8n(pedido) {
+  const resp = await fetch(N8N_WEBHOOK_URL, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(pedido)
+  });
+
+  if (!resp.ok) throw new Error("n8n respondio con error " + resp.status);
+
+  console.log("Pedido enviado a n8n. Token:", pedido.token);
+}
+
+
+/* =======================
+   FUNCIONES DE TOKEN
+   Lee el token de la URL y lo muestra en pantalla.
+   n8n manda un link distinto por cada conversacion:
+   ?pedido=abc123
+======================= */
+
+/**
+ * Lee el parametro ?pedido=TOKEN de la URL.
+ * Ejemplo: /cliente_firebase.html?pedido=mt6sfnfjlsrbho
+ * @returns {string|null} token o null si no vino en la URL
+ */
+function leerTokenDesdeURL() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("pedido");
+}
+
+/**
+ * Actualiza la cabecera. Si no hay token valido, muestra un aviso
+ * en vez de dejar que el cliente intente pedir sin sesion.
+ * @param {string|null} token
+ */
+function mostrarEstadoEnCabecera(token) {
+  if (token) {
+    document.getElementById("etiquetaMesa").textContent = RESTAURANTE.ciudad;
+  } else {
+    document.getElementById("etiquetaMesa").textContent = "Enlace invalido";
+  }
+}
+
+
+/* =======================
+   FUNCIONES DE PEDIDOS
+   Manejo del menu, carrito y envio de pedidos.
+======================= */
+
+/**
+ * Crea las tarjetas HTML de cada plato del MENU (vista compacta:
+ * nombre + precio) y las inserta en el contenedor #listaPlatos.
+ * Tocar la tarjeta abre el modal de detalle con ingredientes/tamanios.
+ */
+function renderizarMenu() {
+  const contenedor = document.getElementById("listaPlatos");
+  contenedor.innerHTML = "";
+
+  MENU.forEach(function(plato) {
+    const div = document.createElement("div");
+    div.className   = "tarjeta-plato";
+    div.dataset.cat = plato.cat;
+
+    div.innerHTML =
+      '<div class="plato-emoji">' + plato.emoji + '</div>' +
+      '<div class="plato-info">' +
+        '<div class="plato-nombre">' + plato.nombre + '</div>' +
+        '<div class="plato-precio">$' + plato.precio.toFixed(2) + '</div>' +
+      '</div>' +
+      '<button class="btn-agregar">+</button>';
+
+    // Tocar la tarjeta (o el "+") abre el detalle del producto
+    div.addEventListener("click", function() {
+      abrirModalDetalle(plato);
+    });
+
+    contenedor.appendChild(div);
+  });
+}
+
+/**
+ * Abre el modal de detalle de un producto: ingredientes (cada uno
+ * con su "x" para quitarlo) y tamanios si el producto los tiene.
+ * Reinicia la seleccion cada vez que se abre.
+ * @param {Object} plato uno de los objetos de MENU
+ */
+function abrirModalDetalle(plato) {
+  _productoActivo    = plato;
+  _ingredientesFuera  = [];
+  _tamanioElegido     = plato.tamanios ? plato.tamanios[0] : null;
+
+  renderizarModalDetalle();
+  document.getElementById("modalDetalle").classList.remove("oculto");
+}
+
+/**
+ * Pinta el contenido del modal de detalle segun el estado actual
+ * (_productoActivo, _tamanioElegido, _ingredientesFuera).
+ */
+function renderizarModalDetalle() {
+  const plato = _productoActivo;
+  if (!plato) return;
+
+  document.getElementById("detalleNombre").textContent = plato.nombre;
+
+  // Tamanios (si el producto los tiene)
+  const contTamanios = document.getElementById("detalleTamanios");
+  if (plato.tamanios) {
+    contTamanios.classList.remove("oculto");
+    contTamanios.innerHTML = plato.tamanios.map(function(t) {
+      const activo = (_tamanioElegido && _tamanioElegido.nombre === t.nombre) ? " activo" : "";
+      return '<button class="chip-tamanio' + activo + '" data-tamanio="' + t.nombre + '">' +
+               t.nombre + ' &middot; $' + t.precio.toFixed(2) +
+             '</button>';
+    }).join("");
+  } else {
+    contTamanios.classList.add("oculto");
+    contTamanios.innerHTML = "";
+  }
+
+  // Ingredientes (cada uno con su "x" para quitarlo)
+  document.getElementById("detalleIngredientes").innerHTML =
+    plato.ingredientes.map(function(ing) {
+      const quitado = _ingredientesFuera.includes(ing) ? " quitado" : "";
+      return (
+        '<div class="fila-ingrediente' + quitado + '" data-ingrediente="' + ing + '">' +
+          '<span>' + ing + '</span>' +
+          '<button class="btn-quitar-ingrediente" data-ingrediente="' + ing + '">' +
+            (_ingredientesFuera.includes(ing) ? '&#8635;' : '&#10005;') +
+          '</button>' +
+        '</div>'
+      );
+    }).join("");
+
+  // Precio a mostrar: el del tamanio elegido, o el precio base
+  const precioMostrado = _tamanioElegido ? _tamanioElegido.precio : plato.precio;
+  document.getElementById("btnAgregarDetalle").textContent = "Agregar &middot; $" + precioMostrado.toFixed(2);
+}
+
+/**
+ * Cierra el modal de detalle sin agregar nada al carrito.
+ */
+function cerrarModalDetalle() {
+  document.getElementById("modalDetalle").classList.add("oculto");
+  _productoActivo = null;
+}
+
+/**
+ * Confirma el producto abierto en el modal de detalle y lo agrega
+ * al carrito, respetando tamanio elegido e ingredientes quitados.
+ * Dos configuraciones del mismo producto (ej. con y sin queso)
+ * se guardan como items distintos del carrito.
+ */
+function confirmarDetalleYAgregar() {
+  if (!_productoActivo) return;
+
+  const plato  = _productoActivo;
+  const precio = _tamanioElegido ? _tamanioElegido.precio : plato.precio;
+
+  agregarAlCarrito({
+    productoId:          plato.id,
+    nombre:              plato.nombre,
+    precio:              precio,
+    tamanio:             _tamanioElegido ? _tamanioElegido.nombre : null,
+    ingredientesFuera:   _ingredientesFuera.slice()
+  });
+
+  cerrarModalDetalle();
+}
+
+/**
+ * Muestra solo los platos de la categoria seleccionada.
+ * "todas" muestra todos.
+ * @param {string} cat nombre de la categoria
+ */
+function filtrarCategoria(cat) {
+  document.querySelectorAll(".tarjeta-plato").forEach(function(t) {
+    if (cat === "todas" || t.dataset.cat === cat) {
+      t.classList.remove("oculto");
+    } else {
+      t.classList.add("oculto");
+    }
+  });
+}
+
+/**
+ * Agrega un item configurado (con su tamanio e ingredientes
+ * quitados, si aplica) al carrito.
+ * Dos items se consideran "el mismo" (y se suman en cantidad)
+ * solo si tienen el mismo nombre, mismo tamanio, y las mismas
+ * exclusiones de ingredientes — asi "sin queso" y "con todo" del
+ * mismo plato quedan como lineas separadas del carrito.
+ * @param {Object} item { productoId, nombre, precio, tamanio, ingredientesFuera }
+ */
+function agregarAlCarrito(item) {
+  const claveNueva = claveItem(item);
+  const existe = _carrito.find(function(i) { return claveItem(i) === claveNueva; });
+
+  if (existe) {
+    existe.cantidad++;
+  } else {
+    _carrito.push({
+      productoId:        item.productoId || null,
+      nombre:            item.nombre,
+      precio:            item.precio,
+      cantidad:          1,
+      tamanio:           item.tamanio || null,
+      ingredientesFuera: item.ingredientesFuera || []
+    });
+  }
+  actualizarCarritoUI();
+}
+
+/**
+ * Genera una clave unica por combinacion de nombre + tamanio +
+ * ingredientes quitados, para saber si dos items del carrito
+ * son "el mismo" o deben listarse por separado.
+ * @param {Object} item
+ * @returns {string}
+ */
+function claveItem(item) {
+  const fuera = (item.ingredientesFuera || []).slice().sort().join(",");
+  return item.nombre + "|" + (item.tamanio || "") + "|" + fuera;
+}
+
+/**
+ * Elimina una linea especifica del carrito (una combinacion
+ * exacta de nombre + tamanio + ingredientes quitados).
+ * @param {string} clave resultado de claveItem() para ese item
+ */
+function eliminarDelCarrito(clave) {
+  _carrito = _carrito.filter(function(i) { return claveItem(i) !== clave; });
+  actualizarCarritoUI();
+}
+
+/**
+ * Recalcula los totales y actualiza tanto el boton flotante
+ * como la lista dentro del modal del carrito (si esta abierto).
+ * Tambien habilita o deshabilita el boton "Confirmar pedido".
+ */
+function actualizarCarritoUI() {
+  const totalItems  = _carrito.reduce(function(s,i){ return s + i.cantidad; }, 0);
+  const totalPrecio = _carrito.reduce(function(s,i){ return s + i.precio * i.cantidad; }, 0);
+
+  document.getElementById("carritoContador").textContent =
+    totalItems === 1 ? "1 plato" : totalItems + " platos";
+  document.getElementById("carritoTotal").textContent =
+    "$" + totalPrecio.toFixed(2);
+  document.getElementById("btnAbrirCarrito").disabled = (_carrito.length === 0);
+
+  document.getElementById("modalTotal").textContent = "$" + totalPrecio.toFixed(2);
+  document.getElementById("btnPedir").disabled = (_carrito.length === 0);
+
+  renderizarModalCarrito();
+}
+
+/**
+ * Pinta la lista de items dentro del modal del carrito.
+ * Cada item muestra nombre, tamanio (si tiene), ingredientes
+ * quitados (si hay), cantidad, precio unitario, subtotal
+ * (si cantidad > 1) y boton de eliminar.
+ */
+function renderizarModalCarrito() {
+  const contenedor = document.getElementById("modalListaCarrito");
+
+  if (_carrito.length === 0) {
+    contenedor.innerHTML = '<div class="carrito-vacio">Tu carrito esta vacio</div>';
+    return;
+  }
+
+  contenedor.innerHTML = _carrito.map(function(item) {
+    const clave    = claveItem(item);
+    const subtotal = item.precio * item.cantidad;
+
+    const partesDetalle = [];
+    if (item.tamanio) partesDetalle.push(item.tamanio);
+    partesDetalle.push(item.cantidad > 1
+      ? "Cantidad: " + item.cantidad + " &middot; $" + item.precio.toFixed(2) + " c/u"
+      : "$" + item.precio.toFixed(2));
+    const detalle = partesDetalle.join(" &middot; ");
+
+    const filaSinIngredientes = item.ingredientesFuera && item.ingredientesFuera.length > 0
+      ? '<div class="item-sin">Sin: ' + item.ingredientesFuera.join(", ") + '</div>'
+      : '';
+
+    const filaSubtotal = item.cantidad > 1
+      ? '<div class="item-subtotal">Subtotal: $' + subtotal.toFixed(2) + '</div>'
+      : '';
+
+    return (
+      '<div class="item-carrito" data-clave="' + clave + '">' +
+        '<div class="item-info">' +
+          '<div class="item-nombre">' + item.nombre + '</div>' +
+          '<div class="item-detalle">' + detalle + '</div>' +
+          filaSinIngredientes +
+          filaSubtotal +
+        '</div>' +
+        '<button class="item-eliminar" data-clave="' + clave + '">&#10005;</button>' +
+      '</div>'
+    );
+  }).join("");
+}
+
+/**
+ * Construye el objeto del pedido con el formato EXACTO que
+ * espera el webhook "pedido-confirmado" de n8n (Edit Fields2
+ * lee body.token, body.items, body.total literalmente):
+ *
+ *   { token, items: [{nombre, cantidad, precio}], total }
+ *
+ * "token" es el mismo que llego por la URL — nunca se genera
+ * uno nuevo aqui. El numero de pedido (pedido_id) lo genera
+ * n8n mas adelante en el flujo, no la web.
+ * @returns {Object} pedido listo para enviar a n8n
+ */
+function construirPedido() {
+  const total = _carrito.reduce(function(s,i){ return s + i.precio * i.cantidad; }, 0);
+  return {
+    token: _tokenPedido,
+    items: _carrito.map(function(i) {
+      // nombre, cantidad, precio: contrato acordado con n8n, no tocar.
+      // producto_id, tamanio, ingredientes_fuera: datos extra agregados
+      // para trazabilidad y detalle en cocina/caja.
+      return {
+        nombre:             i.nombre,
+        cantidad:           i.cantidad,
+        precio:             i.precio,
+        producto_id:        i.productoId || null,
+        tamanio:            i.tamanio || null,
+        ingredientes_fuera: i.ingredientesFuera || []
+      };
+    }),
+    total: total
+  };
+}
+
+/**
+ * Valida, construye y envia el pedido confirmado a n8n.
+ * n8n es quien lo guarda en Sheets y sigue el flujo (metodo
+ * de pago, aviso a cajera). Aqui no se decide nada de eso.
+ * Muestra confirmacion si sale bien, error si falla.
+ */
+async function enviarPedido() {
+  if (_carrito.length === 0) return;
+
+  if (!_tokenPedido) {
+    mostrarError("Enlace invalido. Pide uno nuevo por WhatsApp.");
+    return;
+  }
+
+  // Proteccion de idempotencia: este token ya mando un pedido con
+  // exito (en esta sesion, o en una recarga anterior de la misma
+  // pagina). No se permite enviar dos veces con el mismo token,
+  // ni por doble click ni por recargar y volver a tocar "confirmar".
+  if (_pedidoYaEnviado || sessionStorage.getItem("pedido_enviado_" + _tokenPedido)) {
+    mostrarError("Este pedido ya fue enviado. Si quieres pedir algo mas, escribenos de nuevo por WhatsApp.");
+    return;
+  }
+
+  const btn = document.getElementById("btnPedir");
+  btn.disabled    = true;
+  btn.textContent = "Enviando...";
+
+  try {
+    const pedido = construirPedido();
+    await enviarPedidoAN8n(pedido);
+
+    // Marca este token como ya enviado, en memoria y en sessionStorage
+    // (esto ultimo para que sobreviva si el cliente recarga la pagina).
+    _pedidoYaEnviado = true;
+    sessionStorage.setItem("pedido_enviado_" + _tokenPedido, "1");
+
+    // Cierra el modal y muestra pantalla de confirmacion
+    cerrarModalCarrito();
+    mostrarConfirmacion(pedido);
+
+    // Vacia el carrito para el proximo pedido
+    _carrito = [];
+    actualizarCarritoUI();
+
+  } catch (err) {
+    console.error("Error enviando pedido:", err.message);
+    mostrarError("Error al enviar. Intenta de nuevo.");
+    btn.disabled    = false;
+    btn.textContent = "Confirmar pedido \u2192";
+  }
+}
+
+/**
+ * Llena el cuadro de detalles y muestra la pantalla de confirmacion.
+ * @param {Object} pedido objeto enviado a n8n (token, items, total)
+ */
+function mostrarConfirmacion(pedido) {
+  const hora = new Date().toLocaleTimeString("es", { hour:"2-digit", minute:"2-digit" });
+
+  const filasItems = pedido.items.map(function(i) {
+    const sub = (i.precio * i.cantidad).toFixed(2);
+    const extra = i.cantidad > 1 ? " \u00D7" + i.cantidad : "";
+    return '<div class="fila-detalle"><span>' + i.nombre + extra + '</span><span>$' + sub + '</span></div>';
+  }).join("");
+
+  document.getElementById("confirmacionDetalle").innerHTML =
+    '<div class="fila-detalle"><span>Hora</span><span>' + hora + '</span></div>' +
+    filasItems +
+    '<div class="fila-total"><span>Total</span><span>$' + pedido.total.toFixed(2) + '</span></div>';
+
+  cambiarPantalla("pantallaConfirmacion");
+}
+
+/**
+ * Abre el modal del carrito y refresca su contenido.
+ */
+function abrirModalCarrito() {
+  renderizarModalCarrito();
+  document.getElementById("modalCarrito").classList.remove("oculto");
+}
+
+/**
+ * Cierra el modal del carrito.
+ */
+function cerrarModalCarrito() {
+  document.getElementById("modalCarrito").classList.add("oculto");
+}
+
+
+/* =======================
+   FUNCIONES DE VENTAS
+   (Esta pantalla no registra ventas —
+    eso lo hace la cajera en caja.html)
+   Reservado para historial del cliente en v2.
+======================= */
+
+// placeholder — se expande en futuras versiones
+
+
+/* =======================
+   EVENTOS
+   Aqui se conectan los botones con las funciones.
+   Es el punto de entrada de todo el sistema.
+======================= */
+
+document.addEventListener("DOMContentLoaded", function() {
+
+  // 1. Leer el token de la URL (?pedido=...)
+  _tokenPedido = leerTokenDesdeURL();
+
+  // 2. Sin token: bloquear el menu por completo (Caso B). No se
+  // pinta el menu, no se agregan listeners de carrito/pedido —
+  // la unica accion posible en esta pantalla es ir a WhatsApp.
+  if (!_tokenPedido) {
+    const link = document.getElementById("btnIrWhatsapp");
+    if (link) {
+      link.href = "https://wa.me/" + RESTAURANTE.whatsapp.replace(/\D/g, "");
+    }
+    cambiarPantalla("pantallaSinToken");
+    console.log("Sin token en la URL. Menu bloqueado.");
+    return;
+  }
+
+  // 3. Hay token: seguir el flujo normal
+  mostrarEstadoEnCabecera(_tokenPedido);
+  _pedidoYaEnviado = !!sessionStorage.getItem("pedido_enviado_" + _tokenPedido);
+
+  // 4. Pintar el menu en pantalla
+  renderizarMenu();
+
+  // 5. Pasar a pantalla de menu (ocultar carga)
+  cambiarPantalla("pantallaMenu");
+
+  // 6. Clicks en botones de categoria
+  document.getElementById("contenedorCategorias")
+    .addEventListener("click", function(e) {
+      var btn = e.target.closest(".btn-categoria");
+      if (!btn) return;
+      document.querySelectorAll(".btn-categoria").forEach(function(b){ b.classList.remove("activo"); });
+      btn.classList.add("activo");
+      filtrarCategoria(btn.dataset.cat);
+    });
+
+  // 7. Boton flotante "Ver pedido" -> abre el carrito
+  document.getElementById("btnAbrirCarrito")
+    .addEventListener("click", abrirModalCarrito);
+
+  // 8. Cerrar el modal del carrito
+  document.getElementById("btnCerrarCarrito")
+    .addEventListener("click", cerrarModalCarrito);
+
+  // 9. Eliminar un item del carrito (delegado, la lista se repinta)
+  document.getElementById("modalListaCarrito")
+    .addEventListener("click", function(e) {
+      var btn = e.target.closest(".item-eliminar");
+      if (!btn) return;
+      eliminarDelCarrito(btn.dataset.clave);
+    });
+
+  // 10. Boton "Confirmar pedido" dentro del carrito
+  document.getElementById("btnPedir")
+    .addEventListener("click", enviarPedido);
+
+  // 11. Cerrar el modal de detalle de producto
+  document.getElementById("btnCerrarDetalle")
+    .addEventListener("click", cerrarModalDetalle);
+
+  // 12. Elegir tamanio dentro del modal de detalle
+  document.getElementById("detalleTamanios")
+    .addEventListener("click", function(e) {
+      var chip = e.target.closest(".chip-tamanio");
+      if (!chip || !_productoActivo) return;
+      _tamanioElegido = _productoActivo.tamanios.find(function(t){ return t.nombre === chip.dataset.tamanio; });
+      renderizarModalDetalle();
+    });
+
+  // 13. Quitar/restaurar un ingrediente dentro del modal de detalle
+  document.getElementById("detalleIngredientes")
+    .addEventListener("click", function(e) {
+      var btn = e.target.closest(".btn-quitar-ingrediente");
+      if (!btn) return;
+      var ing = btn.dataset.ingrediente;
+      var pos = _ingredientesFuera.indexOf(ing);
+      if (pos === -1) { _ingredientesFuera.push(ing); }
+      else            { _ingredientesFuera.splice(pos, 1); }
+      renderizarModalDetalle();
+    });
+
+  // 14. Agregar el producto configurado (modal de detalle) al carrito
+  document.getElementById("btnAgregarDetalle")
+    .addEventListener("click", confirmarDetalleYAgregar);
+
+  // 15. Boton "Hacer otro pedido"
+  document.getElementById("btnNuevoPedido")
+    .addEventListener("click", function() {
+      cambiarPantalla("pantallaMenu");
+    });
+
+  console.log("Sistema listo. Token:", _tokenPedido, "|", RESTAURANTE.nombre);
+});
+
+// Muestra una pantalla y oculta todas las demas
+function cambiarPantalla(idActivo) {
+  ["pantallaCarga", "pantallaMenu", "pantallaConfirmacion", "pantallaSinToken"].forEach(function(id) {
+    document.getElementById(id).classList.toggle("oculto", id !== idActivo);
+  });
+}
+
+// Muestra un banner de error que desaparece en 4 segundos
+function mostrarError(msg) {
+  var banner = document.getElementById("bannerError");
+  document.getElementById("textoError").textContent = msg;
+  banner.classList.remove("oculto");
+  setTimeout(function(){ banner.classList.add("oculto"); }, 4000);
+}
+
+</script>
+</body>
+</html>
