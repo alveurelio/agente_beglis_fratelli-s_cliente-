@@ -1342,3 +1342,17 @@ function mostrarError(msg) {
 </script>
 </body>
 </html>
+
+FROM nginx:alpine
+COPY . /usr/share/nginx/html
+EXPOSE 80
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.beglis.rule=Host(`pedidos.alveirocorp.online`)
+      - traefik.http.routers.beglis.entrypoints=websecure
+      - traefik.http.routers.beglis.tls.certresolver=letsencrypt
+      - traefik.http.services.beglis.loadbalancer.server.port=80
